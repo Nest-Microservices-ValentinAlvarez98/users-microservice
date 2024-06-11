@@ -1,0 +1,64 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model login_info {
+  id               String             @id @default(uuid())
+  email            String             @unique
+  is_available     Boolean?           @default(true)
+  password         password? // Relación uno a uno con la tabla password
+  activity         activity? // Relación uno a uno con la tabla activity
+  profile          profile? // Relación uno a uno con la tabla profile
+  shipping_address shipping_address[] // Relación uno a muchos con la tabla shipping_address
+}
+
+model password {
+  login_info_id String     @id // Utilizamos el id de login_info como primaryKey
+  password      String
+  login_info    login_info @relation(fields: [login_info_id], references: [id]) // Definimos la relación con login_info
+}
+
+model activity {
+  login_info_id      String     @id // Utilizamos el id de login_info como primaryKey
+  last_activity      DateTime?
+  last_resetPassword DateTime?
+  last_resetEmail    DateTime?
+  updated_at         DateTime   @updatedAt
+  created_at         DateTime   @default(now())
+  login_info         login_info @relation(fields: [login_info_id], references: [id]) // Definimos la relación con login_info
+}
+
+model profile {
+  login_info_id String     @id // Utilizamos el id de login_info como primaryKey
+  first_name    String
+  last_name     String
+  display_name  String?
+  phone         String
+  login_info    login_info @relation(fields: [login_info_id], references: [id]) // Definimos la relación con login_info
+}
+
+model shipping_address {
+  id            String     @id @default(uuid())
+  state         String
+  city          String
+  location      String
+  street_name   String
+  street_number String
+  zip_code      String
+  contact_phone String
+  contact_name  String
+  commentary    String?
+  login_info_id String
+  login_info    login_info @relation(fields: [login_info_id], references: [id]) // Definimos la relación con login_info
+}
