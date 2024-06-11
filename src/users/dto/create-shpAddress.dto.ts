@@ -26,7 +26,7 @@ export class CreateShpAddressDto {
 
       @IsString()
       @MinLength(3)
-      @MaxLength(10)
+      @MaxLength(20)
       street_number: string;
 
       @IsString()

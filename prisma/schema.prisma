@@ -21,6 +21,7 @@ model login_info {
   activity         activity? // Relación uno a uno con la tabla activity
   profile          profile? // Relación uno a uno con la tabla profile
   shipping_address shipping_address[] // Relación uno a muchos con la tabla shipping_address
+  billing_address  billing_address? // Relación uno a uno con la tabla billing_address
 }
 
 model password {
@@ -60,5 +61,14 @@ model shipping_address {
   contact_name  String
   commentary    String?
   login_info_id String
+  login_info    login_info @relation(fields: [login_info_id], references: [id]) // Definimos la relación con login_info
+}
+
+model billing_address {
+  login_info_id String     @id // Utilizamos el id de login_info como primaryKey
+  state         String
+  city          String
+  zip_code      String
+  full_address  String
   login_info    login_info @relation(fields: [login_info_id], references: [id]) // Definimos la relación con login_info
 }

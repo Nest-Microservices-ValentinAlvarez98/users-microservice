@@ -1,7 +1,9 @@
-import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { CreateShpAddressDto, CreateUserDto, UpdateProfileDto, UpdateShpAddressDto, CreateLogin_infoDto } from './dto';
+import { CreateShpAddressDto, CreateUserDto, UpdateProfileDto, UpdateShpAddressDto, CreateLogin_infoDto, CreateBillAddressDto, UpdateBillAddressDto } from './dto';
 import { HashUtils } from 'src/utils';
+import { PaginationDto } from 'src/common';
+import { RpcException } from '@nestjs/microservices';
 
 @Injectable()
 export class UsersService extends PrismaClient implements OnModuleInit {
@@ -24,7 +26,10 @@ export class UsersService extends PrismaClient implements OnModuleInit {
     })
 
     if (existingUser) {
-      throw new BadRequestException(`Invalid credentials`);
+      throw new RpcException({
+        message: `Invalid credentials`,
+        statusCode: HttpStatus.BAD_REQUEST
+      });
     }
 
     const hashedPassword = await HashUtils.hashPassword(password);
@@ -92,13 +97,19 @@ export class UsersService extends PrismaClient implements OnModuleInit {
     })
 
     if (!user) {
-      throw new BadRequestException(`Invalid credentials`);
+      throw new RpcException({
+        message: `Invalid credentials`,
+        statusCode: HttpStatus.BAD_REQUEST
+      });
     }
 
     const isPasswordMatch = await HashUtils.comparePassword(password, user.password.password);
 
     if (!isPasswordMatch) {
-      throw new BadRequestException(`Invalid credentials`);
+      throw new RpcException({
+        message: `Invalid credentials`,
+        statusCode: HttpStatus.BAD_REQUEST
+      });
     }
 
     const payload = Object.assign({
@@ -114,34 +125,36 @@ export class UsersService extends PrismaClient implements OnModuleInit {
 
   }
 
-  async createShpAddress(id: string, createShpAddressDto: CreateShpAddressDto) {
+  async findAll(paginationDto: PaginationDto) {
 
-    const limitAddress = await this.shipping_address.count({
-      where: {
-        login_info_id: id
-      }
-    })
+    const { page, limit } = paginationDto;
 
-    if (limitAddress >= 3) {
-      throw new BadRequestException(`Limit of addresses reached`);
+    const totalUsers = await this.login_info.count();
+    const lastPage = Math.ceil(totalUsers / limit);
+
+    if (page > lastPage) {
+      throw new RpcException({
+        message: `Page ${page} not found`,
+        statusCode: HttpStatus.BAD_REQUEST
+      })
     }
 
-    return await this.shipping_address.create({
-      data: {
-        ...createShpAddressDto,
-        login_info_id: id
+    return {
+      data: await this.login_info.findMany({
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          activity: true,
+          profile: true
+        }
+      }),
+      meta: {
+        totalUsers,
+        page,
+        lastPage
       }
-    })
+    }
 
-  }
-
-  async findAll() {
-    return await this.login_info.findMany({
-      include: {
-        activity: true,
-        profile: true
-      }
-    })
   }
 
   async findOneById(id: string) {
@@ -153,28 +166,58 @@ export class UsersService extends PrismaClient implements OnModuleInit {
       include: {
         activity: true,
         profile: true,
-        shipping_address: true
+        shipping_address: true,
+        billing_address: true
       }
     })
 
     if (!findResult) {
-      throw new BadRequestException('User not found');
+      throw new RpcException({
+        message: `User not found`,
+        statusCode: HttpStatus.NOT_FOUND
+      })
     }
 
     return findResult;
   }
 
+  async findProfile(id: string) {
+
+    const findResult = await this.profile.findUnique({
+      where: {
+        login_info_id: id
+      }
+    })
+
+    if (!findResult) {
+      throw new RpcException({
+        message: `User not found`,
+        statusCode: HttpStatus.NOT_FOUND
+      })
+    }
+
+    return findResult;
+
+  }
+
   async updateProfile(id: string, updateProfileDto: UpdateProfileDto) {
 
     if (!Object.keys(updateProfileDto).length) {
-      throw new BadRequestException('No data to update');
+      throw new RpcException({
+        message: `No data to update`,
+        statusCode: HttpStatus.BAD_REQUEST
+      })
     }
 
     const user = await this.findOneById(id);
 
     const isDifferent = Object.keys(updateProfileDto).some(key => user.profile[key] !== updateProfileDto[key]);
+
     if (!isDifferent) {
-      throw new BadRequestException(`Nothing to update`);
+      throw new RpcException({
+        message: `No data to update`,
+        statusCode: HttpStatus.BAD_REQUEST
+      })
     }
 
     return await this.profile.update({
@@ -185,17 +228,126 @@ export class UsersService extends PrismaClient implements OnModuleInit {
     })
   }
 
-  async updateShpAddress(id: string, updateShpAddressDto: UpdateShpAddressDto) {
+  async createShpAddress(id: string, createShpAddressDto: CreateShpAddressDto) {
+
+    const limitAddress = await this.shipping_address.count({
+      where: {
+        login_info_id: id
+      }
+    })
+
+    if (limitAddress >= 3) {
+      throw new RpcException({
+        message: `Limit of 3 shipping address, reached`,
+        statusCode: HttpStatus.BAD_REQUEST
+      })
+    }
+
+    return await this.shipping_address.create({
+      data: {
+        ...createShpAddressDto,
+        login_info_id: id
+      }
+    })
+
+  }
+
+  async findShpAddress(shp_id: string) {
+
+    const findResult = await this.shipping_address.findUnique({
+      where: {
+        id: shp_id
+      }
+    })
+
+    if (!findResult) {
+      throw new RpcException({
+        message: `Shipping address not found`,
+        statusCode: HttpStatus.NOT_FOUND
+      })
+    }
+
+    return findResult;
+
+  }
+
+  async updateShpAddress(shp_id: string, updateShpAddressDto: UpdateShpAddressDto) {
 
     if (!Object.keys(updateShpAddressDto).length) {
-      throw new BadRequestException('No data to update');
+      throw new RpcException({
+        message: `No data to update`,
+        statusCode: HttpStatus.BAD_REQUEST
+      })
     }
 
     return await this.shipping_address.update({
       where: {
-        id: id
+        id: shp_id
       },
       data: updateShpAddressDto
+    })
+
+  }
+
+  async createBillAddress(user_id: string, createBillAddressDto: CreateBillAddressDto) {
+
+    const findResult = await this.billing_address.findUnique({
+      where: {
+        login_info_id: user_id
+      }
+    })
+
+    if (findResult) {
+      throw new RpcException({
+        message: `Billing address already exists`,
+        statusCode: HttpStatus.BAD_REQUEST
+      })
+    }
+
+    const createResult = await this.billing_address.create({
+      data: {
+        ...createBillAddressDto,
+        login_info_id: user_id
+      }
+    })
+
+    return createResult;
+
+  }
+
+  async findBillAddress(user_id: string) {
+
+    const findResult = await this.billing_address.findUnique({
+      where: {
+        login_info_id: user_id
+      }
+    })
+
+    if (!findResult) {
+      throw new RpcException({
+        message: `Billing address not found`,
+        statusCode: HttpStatus.NOT_FOUND
+      })
+    }
+
+    return findResult;
+
+  }
+
+  async updateBillAddress(id: string, updateBillAddressDto: UpdateBillAddressDto) {
+
+    if (!Object.keys(updateBillAddressDto).length) {
+      throw new RpcException({
+        message: `No data to update`,
+        statusCode: HttpStatus.BAD_REQUEST
+      })
+    }
+
+    return await this.billing_address.update({
+      where: {
+        login_info_id: id
+      },
+      data: updateBillAddressDto
     })
 
   }
